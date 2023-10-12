@@ -4,9 +4,9 @@ use futures::StreamExt;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 
-mod tracker;
+mod metrics;
 
-use tracker::BytesRWTrackerLayer;
+use metrics::MetricsLayer;
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +17,7 @@ async fn main() {
         .route("/json", post(json_handler));
 
     let middleware_stack = ServiceBuilder::new()
-        .layer(BytesRWTrackerLayer);
+        .layer(MetricsLayer);
 
     let app = middleware_stack.service(app);
     
@@ -34,13 +34,10 @@ async fn handler() -> &'static str {
 use axum::extract::{BodyStream, Json};
 
 async fn stream_handler(mut body: BodyStream) -> &'static str {
-    while let Some(chunk) = body.next().await {
-        println!("chunk: {:?}", chunk);
-    }
+    while let Some(_chunk) = body.next().await {}
     "Hello, Axum!"
 }
 
-async fn json_handler(Json(body): Json<serde_json::Value>) -> &'static str {
-    println!("body: {:?}", body);
+async fn json_handler(Json(_body): Json<serde_json::Value>) -> &'static str {
     "Hello, Axum!"
 }
