@@ -1,4 +1,3 @@
-use tower_http::classify::ClassifyEos;
 use futures_core::ready;
 use http::HeaderMap;
 use http_body::Body;
@@ -9,21 +8,21 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
+use tower_http::classify::ClassifyEos;
+
+use super::body_tracker::BodyTrackerHandle;
 
 pin_project! {
-    /// Response body for [`Trace`].
-    ///
-    /// [`Trace`]: super::Trace
     pub struct ResponseBody<B, C> {
         #[pin]
         pub(crate) inner: B,
         pub(crate) classify_eos: Option<C>,
+        pub(crate) response_body_tracker_handle: BodyTrackerHandle,
         pub(crate) start: Instant,
     }
 }
 
-impl<B, C> Body
-    for ResponseBody<B, C>
+impl<B, C> Body for ResponseBody<B, C>
 where
     B: Body,
     B::Error: fmt::Display + 'static,
@@ -48,6 +47,11 @@ where
 
         match &result {
             Ok(_chunk) => {
+                let read = this.response_body_tracker_handle.read();
+                println!(
+                    "Observed {} bytes of response body after {:?}",
+                    read, this.start
+                );
                 // this.on_body_chunk.on_body_chunk(chunk, latency, this.span);
             }
             Err(_err) => {

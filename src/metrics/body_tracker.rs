@@ -7,24 +7,25 @@ use std::{
     task::{Context, Poll},
 };
 
+use bytes::Buf;
 use http_body::Body;
 use pin_project_lite::pin_project;
 
 pin_project! {
     #[derive(Debug)]
-    pub struct BodyTracker<S> {
+    pub struct BodyTracker<B> {
         read: Arc<AtomicUsize>,
         #[pin]
-        stream: S,
+        body: B,
     }
 }
 
-impl<S> BodyTracker<S> {
-    /// Create a new [`BodyTracker`] 
-    pub fn new(stream: S) -> Self {
+impl<B> BodyTracker<B> {
+    /// Create a new [`BodyTracker`]
+    pub fn new(body: B) -> Self {
         Self {
             read: Arc::new(AtomicUsize::new(0)),
-            stream,
+            body,
         }
     }
 
@@ -36,18 +37,22 @@ impl<S> BodyTracker<S> {
     }
 }
 
-impl Body for BodyTracker<hyper::body::Body> {
-    type Data = hyper::body::Bytes;
-    type Error = hyper::Error;
+impl<ReqBody> Body for BodyTracker<ReqBody>
+where
+    ReqBody: Body,
+    ReqBody::Error: std::fmt::Display + 'static,
+{
+    type Data = ReqBody::Data;
+    type Error = ReqBody::Error;
 
     fn poll_data(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.as_mut().project();
-        let res = this.stream.poll_data(cx);
+        let res = this.body.poll_data(cx);
         if let Poll::Ready(Some(Ok(data))) = &res {
-            this.read.fetch_add(data.len(), Ordering::Relaxed);
+            this.read.fetch_add(data.remaining(), Ordering::Relaxed);
         }
         res
     }
@@ -56,11 +61,11 @@ impl Body for BodyTracker<hyper::body::Body> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<hyper::HeaderMap>, Self::Error>> {
-        self.project().stream.poll_trailers(cx)
+        self.project().body.poll_trailers(cx)
     }
 
     fn is_end_stream(&self) -> bool {
-        self.stream.is_end_stream()
+        self.body.is_end_stream()
     }
 }
 

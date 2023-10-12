@@ -1,5 +1,4 @@
 use http::Response;
-use tower_http::classify::{ClassifiedResponse, ClassifyResponse};
 use http_body::Body;
 use pin_project_lite::pin_project;
 use std::{
@@ -8,10 +7,10 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
+use tower_http::classify::{ClassifiedResponse, ClassifyResponse};
 
-// use super::body_tracker::{BodyTracker, BodyTrackerHandle};
-use super::body_tracker::BodyTrackerHandle;
 use super::body::ResponseBody;
+use super::body_tracker::{BodyTracker, BodyTrackerHandle};
 
 pin_project! {
     pub struct ResponseFuture<F, C> {
@@ -23,8 +22,7 @@ pin_project! {
     }
 }
 
-impl<Fut, ResBody, E, C> Future
-    for ResponseFuture<Fut, C>
+impl<Fut, ResBody, E, C> Future for ResponseFuture<Fut, C>
 where
     Fut: Future<Output = Result<Response<ResBody>, E>>,
     ResBody: Body,
@@ -33,8 +31,8 @@ where
     C: ClassifyResponse,
 {
     type Output = Result<
-        // Response<ResponseBody<BodyTracker<ResBody>, C::ClassifyEos>>,
-        Response<ResponseBody<ResBody, C::ClassifyEos>>,
+        Response<ResponseBody<BodyTracker<ResBody>, C::ClassifyEos>>,
+        // Response<ResponseBody<ResBody, C::ClassifyEos>>,
         E,
     >;
 
@@ -43,7 +41,10 @@ where
         let result = futures_util::ready!(this.inner.poll(cx));
 
         let read = this.request_body_tracker_handle.read();
-        println!("Observed {} bytes of request body after {:?}", read, this.start);
+        println!(
+            "Observed {} bytes of request body after {:?}",
+            read, this.start
+        );
 
         let classifier = this.classifier.take().unwrap();
         match result {
@@ -52,11 +53,15 @@ where
                 let classification = classifier.classify_response(&res);
                 let start = *this.start;
 
-                let header_size = res.headers().iter().fold(0, |acc, (k, v)| {
-                    acc + k.as_str().len() + v.as_bytes().len()
-                });
+                let header_size = res
+                    .headers()
+                    .iter()
+                    .fold(0, |acc, (k, v)| acc + k.as_str().len() + v.as_bytes().len());
 
-                println!("Observed response header_size: {} | start = {:?}", header_size, start);
+                println!(
+                    "Observed response header_size: {} | start = {:?}",
+                    header_size, start
+                );
 
                 match classification {
                     ClassifiedResponse::Ready(classification) => {
@@ -64,21 +69,29 @@ where
                             // TODO: What do you want to do with the failure class?
                         }
 
-                        let res = res.map(|body| ResponseBody {
-                            // inner: BodyTracker::new(body),
-                            inner: body,
-                            classify_eos: None,
-                            start,
+                        let res = res.map(|body| {
+                            let inner = BodyTracker::new(body);
+                            let response_body_tracker_handle = inner.handle();
+                            ResponseBody {
+                                inner,
+                                response_body_tracker_handle,
+                                classify_eos: None,
+                                start,
+                            }
                         });
 
                         Poll::Ready(Ok(res))
                     }
                     ClassifiedResponse::RequiresEos(classify_eos) => {
-                        let res = res.map(|body| ResponseBody {
-                            // inner: BodyTracker::new(body),
-                            inner: body,
-                            classify_eos: Some(classify_eos),
-                            start,
+                        let res = res.map(|body| {
+                            let inner = BodyTracker::new(body);
+                            let response_body_tracker_handle = inner.handle();
+                            ResponseBody {
+                                inner,
+                                response_body_tracker_handle,
+                                classify_eos: Some(classify_eos),
+                                start,
+                            }
                         });
                         Poll::Ready(Ok(res))
                     }

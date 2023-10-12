@@ -1,5 +1,5 @@
-use axum::{Router, ServiceExt};
 use axum::routing::{get, post};
+use axum::{Router, ServiceExt};
 use futures::StreamExt;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
@@ -16,15 +16,16 @@ async fn main() {
         .route("/stream", post(stream_handler))
         .route("/json", post(json_handler));
 
-    let middleware_stack = ServiceBuilder::new()
-        .layer(MetricsLayer);
+    let middleware_stack = ServiceBuilder::new().layer(MetricsLayer);
 
     let app = middleware_stack.service(app);
-    
+
     // Start the server on the given address.
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    axum::Server::bind(&addr).serve(app.into_make_service())
-        .await.unwrap();
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
 
 async fn handler() -> &'static str {
